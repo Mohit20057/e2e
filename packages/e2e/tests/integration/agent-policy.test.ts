@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT, type SemanticNode } from '../../src/engine/contract.ts';
 import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { installFakeLoopModel, loopCalls, nodeIdFor } from '../helpers/fake-loop-model.ts';
-import { extracted, installFakeModel, judgment } from '../helpers/fake-model.ts';
+import { extracted, fakeCalls, installFakeModel, judgment } from '../helpers/fake-model.ts';
 import type { FakeCall } from '../helpers/fake-model.ts';
 import { assertValidReport } from '../helpers/report-schema.ts';
 import { createProject, resultByTitle, runExisting, runProject, type FixtureProject } from '../helpers/run-project.ts';
@@ -25,6 +25,12 @@ test('fills a secret into a password field', async ({ app, agent, screen }) => {
   await app.open();
   await screen.getByLabel('Password').fill(credentials.user('member').password);
   await agent.assert('the password field has a value');
+});
+
+test('fills a secret into a field the page echoes', async ({ app, agent, screen }) => {
+  await app.open('/echo');
+  await screen.getByLabel('Token').fill(credentials.user('member').password);
+  await agent.assert('the token echo shows a value');
 });
 
 test('repairs an extraction that fails the caller schema', async ({ app, agent }) => {
@@ -107,6 +113,7 @@ describe('agent policy and error classification', () => {
   let app: FixtureApp;
   let outcome: RunOutcome;
   let project: FixtureProject;
+  let modelCalls: FakeCall[];
   let unconfigured: RunOutcome;
   let unconfiguredProject: FixtureProject;
   let ghost: RunOutcome;
@@ -130,6 +137,7 @@ describe('agent policy and error classification', () => {
     );
     outcome = main.outcome;
     project = main.project;
+    modelCalls = [...fakeCalls];
 
     const missingCredential = await runProject(
       { 'tests/ghost.e2e.ts': UNCONFIGURED_SUITE },
@@ -205,8 +213,14 @@ describe('agent policy and error classification', () => {
   });
 
   it('never sends a secret value to the model', () => {
-    const result = resultByTitle(outcome, 'fills a secret into a password field');
-    expect(JSON.stringify(result.attempts)).not.toContain('hunter2-secret');
+    expect(resultByTitle(outcome, 'fills a secret into a field the page echoes').status).toBe('passed');
+    const echoed = modelCalls.filter((call) => call.instruction === 'the token echo shows a value');
+    expect(echoed).toHaveLength(1);
+    expect(echoed[0]!.observation).toContain('<secret:member.password>');
+    expect(modelCalls.length).toBeGreaterThanOrEqual(2);
+    for (const call of modelCalls) {
+      expect(`${call.system}\n${call.prompt}`.toLowerCase()).not.toContain('hunter2-secret');
+    }
   });
 
   it('reports an unconfigured credential as a configuration failure', () => {
