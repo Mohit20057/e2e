@@ -92,12 +92,14 @@ describe('secrets shown transformed', () => {
     for (const form of FORMS) expect(text).not.toContain(form);
   });
 
-  it.each(['plain', 'upper', 'lower', 'note-echo'])('fails on the %s echo with the received text redacted', (id) => {
-    const result = resultByTitle(outcome, `fails on the ${id} echo`);
-    expect(result.status).toBe('failed');
-    const message = result.attempts[0]!.error!.message;
-    expect(message).toContain(id === 'note-echo' ? '<secret:note>' : '<secret:token>');
-    for (const form of FORMS) expect(message).not.toContain(form);
+  it('fails on each echo with the received text redacted', () => {
+    for (const id of ['plain', 'upper', 'lower', 'note-echo']) {
+      const result = resultByTitle(outcome, `fails on the ${id} echo`);
+      expect(result.status, id).toBe('failed');
+      const message = result.attempts[0]!.error!.message;
+      expect(message).toContain(id === 'note-echo' ? '<secret:note>' : '<secret:token>');
+      for (const form of FORMS) expect(message).not.toContain(form);
+    }
   });
 
   it('matches the transformed text as the page shows it', () => {

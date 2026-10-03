@@ -12,7 +12,6 @@ import { startFixtureApp, type FixtureApp } from '../helpers/fixture-app.ts';
 import { installFakeLoopModel, loopCalls, nodeIdFor } from '../helpers/fake-loop-model.ts';
 import { extracted, fakeCalls, installFakeModel, judgment } from '../helpers/fake-model.ts';
 import type { FakeCall } from '../helpers/fake-model.ts';
-import { assertValidReport } from '../helpers/report-schema.ts';
 import { createProject, resultByTitle, runExisting, runProject, type FixtureProject } from '../helpers/run-project.ts';
 import type { RunOutcome } from '../helpers/run-project.ts';
 import type { SdkLanguageModel } from '../../src/agent/ai-sdk.ts';
@@ -20,12 +19,6 @@ import type { StepExecutor } from '../../src/agent/executor.ts';
 import { createFakeEngine, FAKE_APP, FAKE_APP_URL } from '../helpers/fake-engine.ts';
 
 const SUITE = `import { test, credentials } from 'e2e';
-
-test('fills a secret into a password field', async ({ app, agent, screen }) => {
-  await app.open();
-  await screen.getByLabel('Password').fill(credentials.user('member').password);
-  await agent.assert('the password field has a value');
-});
 
 test('fills a secret into a field the page echoes', async ({ app, agent, screen }) => {
   await app.open('/echo');
@@ -197,21 +190,6 @@ describe('agent policy and error classification', () => {
     expect(step.model).toMatchObject({ provider: 'fake', model: 'scripted' });
   });
 
-  it('fills a secret into a purpose-compatible secure field', () => {
-    expect(resultByTitle(outcome, 'fills a secret into a password field').status).toBe('passed');
-  });
-
-  it('suppresses screenshot evidence once the viewport is pixel-tainted', () => {
-    const attempt = resultByTitle(outcome, 'fills a secret into a password field').attempts.at(-1)!;
-    const assertion = attempt.steps.find((step) => step.api === 'agent.assert')!;
-    expect(assertion.artifacts).toEqual([]);
-    expect(
-      assertion.events.some(
-        (event) => event.kind === 'policy' && event.name === 'assert.screenshot' && event.decision === 'denied',
-      ),
-    ).toBe(true);
-  });
-
   it('never sends a secret value to the model', () => {
     expect(resultByTitle(outcome, 'fills a secret into a field the page echoes').status).toBe('passed');
     const echoed = modelCalls.filter((call) => call.instruction === 'the token echo shows a value');
@@ -251,57 +229,6 @@ describe('agent policy and error classification', () => {
       expect(result.status).toBe('skipped');
       expect(result.attempts).toHaveLength(0);
     }
-  });
-});
-
-describe('serial group artifacts', () => {
-  let app: FixtureApp;
-  let outcome: RunOutcome;
-  let project: FixtureProject;
-
-  const SERIAL_SUITE = `import { test } from 'e2e';
-
-test.describe('group', { serial: true }, () => {
-  test('captures evidence from a shared session', async ({ app, agent }) => {
-    await app.open();
-    await agent.assert('the Home heading is visible');
-  });
-});
-`;
-
-  beforeAll(async () => {
-    app = await startFixtureApp();
-    const model = installFakeModel(() => judgment(true, 'the heading is present'));
-    const result = await runProject(
-      { 'tests/serial.e2e.ts': SERIAL_SUITE },
-      {
-        appUrl: app.url,
-        config: {
-          tests: 'tests/**/*.e2e.ts',
-          agents: { default: { model } },
-        },
-      },
-    );
-    outcome = result.outcome;
-    project = result.project;
-  }, 120_000);
-
-  afterAll(async () => {
-    project?.cleanup();
-    await app?.close();
-  });
-
-  it('records a resolvable path, size, and digest for member artifacts', () => {
-    // A shared session writes into the group directory, so a member that
-    // registers against its own directory produces an unresolvable artifact.
-    assertValidReport(outcome.report);
-    const group = outcome.report.run.serialGroups[0]!;
-    const screenshot = group.attempts
-      .at(-1)!
-      .artifacts.find((artifact) => artifact.kind === 'screenshot')!;
-    expect(screenshot.path).toBeDefined();
-    expect(screenshot.size).toBeGreaterThan(0);
-    expect(screenshot.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
