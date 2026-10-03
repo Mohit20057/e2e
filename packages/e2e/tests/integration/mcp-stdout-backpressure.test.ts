@@ -66,7 +66,8 @@ describe('e2e mcp stdout backpressure', { timeout: 60_000 }, () => {
     for (let index = 0; index < READS; index += 1) {
       send({ jsonrpc: '2.0', id: 100 + index, method: 'resources/read', params: { uri: 'e2e://guide' } });
     }
-    await sleep(2_000);
+    while (server.exitCode === null && server.stdout.readableLength < server.stdout.readableHighWaterMark) await sleep(5);
+    await sleep(250);
     expect(server.exitCode, `server exited early:\n${stderr}`).toBeNull();
 
     let output = '';
