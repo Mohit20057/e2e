@@ -12,7 +12,7 @@ import type { LocatorAction, LocatorExpression, SemanticNode } from '../../src/e
 import { engineFailure, obj, parseKey, resolveExpression } from './engine-runtime.ts';
 
 /** The stable id of the observation root; `perform(root, swipe)` is the viewport swipe. */
-export const SCENE_ROOT_ID = 'root';
+const SCENE_ROOT_ID = 'root';
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type StateKey = keyof NonNullable<SemanticNode['states']>;
