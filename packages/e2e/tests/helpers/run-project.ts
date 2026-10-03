@@ -39,7 +39,7 @@ export function webTarget(name: string, url: string): Target {
  * and so passes none, a fake engine that starts no browser.
  */
 function defaultTargets(appUrl: string | undefined): NonNullable<E2EConfig['targets']> {
-  if (appUrl === undefined) return [{ name: 'fake', engine: createFakeEngine().engine, app: FAKE_APP }];
+  if (appUrl === undefined) return [{ name: 'fake', platform: 'fake', engine: createFakeEngine({ state: true }).engine, app: FAKE_APP }];
   return [webTarget('web', appUrl)];
 }
 
@@ -163,7 +163,7 @@ export function workerFakeConfigSource(workers: number, extra = ''): string {
 import { createFakeEngine, FAKE_APP } from '../../helpers/fake-engine.ts';
 
 export default {
-  targets: [{ name: 'fake', engine: createFakeEngine().engine, app: FAKE_APP }],
+  targets: [{ name: 'fake', platform: 'fake', engine: createFakeEngine({ state: true }).engine, app: FAKE_APP }],
   workers: ${workers},${extra}
 } satisfies E2EConfig;
 `;
@@ -178,16 +178,26 @@ export async function runProjectWithConfigFile(
   options: RunProjectOptions & { configSource: string },
 ): Promise<{ outcome: RunOutcome; project: FixtureProject }> {
   const project = createProject({ ...files, 'e2e.config.ts': options.configSource });
+  return { outcome: await runExistingWithConfigFile(project, options), project };
+}
+
+/**
+ * Runs an existing project through its own `e2e.config.ts` on the worker
+ * path. Repeated runs share on-disk state, as with `runExisting`.
+ */
+export async function runExistingWithConfigFile(
+  project: FixtureProject,
+  options: Omit<RunProjectOptions, 'config'>,
+): Promise<RunOutcome> {
   const previousAppUrl = process.env['APP_URL'];
   if (options.appUrl !== undefined) process.env['APP_URL'] = options.appUrl;
   try {
-    const outcome = await run({
+    return await run({
       cwd: project.dir,
       env: fixtureEnv(options.appUrl),
       quiet: true,
       ...options.runOptions,
     });
-    return { outcome, project };
   } finally {
     if (previousAppUrl === undefined) delete process.env['APP_URL'];
     else process.env['APP_URL'] = previousAppUrl;
