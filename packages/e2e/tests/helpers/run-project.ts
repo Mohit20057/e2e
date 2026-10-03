@@ -8,6 +8,7 @@ import { web } from '@e2e-dev/web';
 import type { ListOptions, ListedPair, RunOptions, RunOutcome } from '../../src/run/runner.ts';
 import type { E2EConfig } from '../../src/index.ts';
 import { inflateEntry, readZip } from '../../src/internal/zip.ts';
+import { createFakeEngine, FAKE_APP } from './fake-engine.ts';
 
 export type { RunOptions, RunOutcome };
 
@@ -32,9 +33,19 @@ export function webTarget(name: string, url: string): Target {
   return { name, engine: web() as unknown as NonNullable<Target['engine']>, app: { url } };
 }
 
-/** The web target integration suites run against unless their config names its own. */
-function defaultTargets(appUrl: string): NonNullable<E2EConfig['targets']> {
+/**
+ * The target a suite runs against unless its config names its own: the web
+ * target on the fixture app at `appUrl`, or, for a suite that opens no page
+ * and so passes none, a fake engine that starts no browser.
+ */
+function defaultTargets(appUrl: string | undefined): NonNullable<E2EConfig['targets']> {
+  if (appUrl === undefined) return [{ name: 'fake', engine: createFakeEngine().engine, app: FAKE_APP }];
   return [webTarget('web', appUrl)];
+}
+
+/** The run environment: the caller's, outside CI, with the fixture app's URL when there is one. */
+function fixtureEnv(appUrl: string | undefined): NodeJS.ProcessEnv {
+  return { ...process.env, ...(appUrl === undefined ? {} : { APP_URL: appUrl }), CI: '' };
 }
 
 export interface FixtureProject {
@@ -81,8 +92,9 @@ export function contentsUnder(dir: string): [string, string][] {
 }
 
 export interface RunProjectOptions {
-  appUrl: string;
-  /** Overrides of the fixture config; `targets` defaults to the web target on `appUrl`. */
+  /** The fixture app; without one, the default target is a fake engine and no browser starts. */
+  appUrl?: string;
+  /** Overrides of the fixture config; `targets` defaults to the web target on `appUrl`, or the fake engine without one. */
   config?: Partial<E2EConfig>;
   runOptions?: Partial<RunOptions>;
 }
@@ -109,11 +121,7 @@ export async function runExisting(
     // Core knows no engine: a web target is served by the playwright engine
     // the test explicitly passes, exactly as a project config would.
     rawConfig: { targets: defaultTargets(options.appUrl), ...options.config },
-    env: {
-      ...process.env,
-      APP_URL: options.appUrl,
-      CI: '',
-    },
+    env: fixtureEnv(options.appUrl),
     quiet: true,
     ...options.runOptions,
   });
@@ -128,19 +136,34 @@ export async function listProject(
   const { pairs } = await list({
     cwd: project.dir,
     rawConfig: { targets: defaultTargets(options.appUrl), ...options.config },
-    env: { ...process.env, APP_URL: options.appUrl, CI: '' },
+    env: fixtureEnv(options.appUrl),
     ...options.listOptions,
   });
   return { pairs, project };
 }
 
-/** Default file-backed config used by worker-path integration tests. */
+/** Default file-backed config used by worker-path integration tests that open the fixture app. */
 export function workerConfigSource(workers: number, extra = ''): string {
   return `import type { E2EConfig } from 'e2e';
 import { web } from '@e2e-dev/web';
 
 export default {
   targets: [{ name: 'web', engine: web(), app: { url: process.env.APP_URL! } }],
+  workers: ${workers},${extra}
+} satisfies E2EConfig;
+`;
+}
+
+/**
+ * A file-backed worker-path config on the fake engine, for suites that open
+ * no page: each worker imports the helper and builds its own instance.
+ */
+export function workerFakeConfigSource(workers: number, extra = ''): string {
+  return `import type { E2EConfig } from 'e2e';
+import { createFakeEngine, FAKE_APP } from '../../helpers/fake-engine.ts';
+
+export default {
+  targets: [{ name: 'fake', engine: createFakeEngine().engine, app: FAKE_APP }],
   workers: ${workers},${extra}
 } satisfies E2EConfig;
 `;
@@ -156,11 +179,11 @@ export async function runProjectWithConfigFile(
 ): Promise<{ outcome: RunOutcome; project: FixtureProject }> {
   const project = createProject({ ...files, 'e2e.config.ts': options.configSource });
   const previousAppUrl = process.env['APP_URL'];
-  process.env['APP_URL'] = options.appUrl;
+  if (options.appUrl !== undefined) process.env['APP_URL'] = options.appUrl;
   try {
     const outcome = await run({
       cwd: project.dir,
-      env: { ...process.env, APP_URL: options.appUrl, CI: '' },
+      env: fixtureEnv(options.appUrl),
       quiet: true,
       ...options.runOptions,
     });
