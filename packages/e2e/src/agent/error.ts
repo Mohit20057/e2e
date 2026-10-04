@@ -81,7 +81,7 @@ const MODEL_UNREACHABLE_CODES: ReadonlySet<string> = new Set(
  * model was shown may be what went wrong.
  */
 export function isModelUnreachable(error: unknown): boolean {
-  if (!isE2EError(error) && !isAgentError(error)) return false;
+  if (!isE2EError(error)) return false;
   return MODEL_UNREACHABLE_CODES.has(error.code);
 }
 

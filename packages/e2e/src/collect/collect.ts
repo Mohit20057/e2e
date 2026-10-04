@@ -492,16 +492,16 @@ export async function collect(
   };
 }
 
-/**
- * Imports each discovered file once in the collection realm. A collection
- * error in a selected file, or in any file of a run nothing narrowed, throws;
- * one in a file a narrowed run left unselected is kept in `uncollected`.
- */
 /** A `CollectionError` from this module copy or the one a test file's imports loaded. */
 function isCollectionError(cause: unknown): cause is Error {
   return isE2EError(cause) && cause.code === 'COLLECTION_ERROR';
 }
 
+/**
+ * Imports each discovered file once in the collection realm. A collection
+ * error in a selected file, or in any file of a run nothing narrowed, throws;
+ * one in a file a narrowed run left unselected is kept in `uncollected`.
+ */
 async function collectFiles(
   config: ResolvedConfig,
   discovered: readonly string[],
