@@ -48,6 +48,12 @@ class InProcessRunner implements UnitRunner {
   private readonly finish: () => void;
   private exited = false;
   private closing = false;
+  /**
+   * Set by a fatal error: the worker is dead to the scheduler from then on,
+   * as a crashed process would be, so nothing it reports while it winds down
+   * counts, and its unit's results are synthesized when it exits.
+   */
+  private crashed = false;
   /** Takes what this process failed to catch while the runner lives; see `catchStrays`. */
   private readonly onRejection = (cause: unknown): void => {
     if (isAbandonedRejection(cause)) return;
@@ -69,7 +75,7 @@ class InProcessRunner implements UnitRunner {
     this.worker = new TargetWorker(
       {
         emit: (message) => {
-          if (!this.exited) this.events.onMessage(message);
+          if (!this.exited && !this.crashed) this.events.onMessage(message);
         },
         fatal: (cause) => this.fail(cause),
         finished: () => this.end('shut down'),
@@ -114,7 +120,8 @@ class InProcessRunner implements UnitRunner {
    * Catches what a test leaves uncaught the way a worker process does
    * (`worker/entry.ts`): a rejection nobody handled is charged to the attempt
    * in flight, or recorded against the last test that finished, and is
-   * otherwise fatal to this worker, as an uncaught exception is. The
+   * otherwise fatal to this worker, as an uncaught exception is (see
+   * `fail`). The
    * listeners live exactly as long as the runner, so a host process keeps its
    * own handling before and after the run. The scheduler keeps at most one
    * in-process runner alive at a time, so nothing is charged twice.
@@ -124,10 +131,17 @@ class InProcessRunner implements UnitRunner {
     process.on('uncaughtException', this.onException);
   }
 
-  /** Reports an unrecoverable failure and winds the worker down. */
+  /**
+   * Reports an unrecoverable failure and ends the worker the way a process
+   * dies: its unit is interrupted and nothing more it reports is passed on,
+   * so on exit the scheduler fails the test in flight with `WORKER_CRASH`
+   * and skips the unit's others, as it does for a worker process.
+   */
   private fail(cause: unknown): void {
-    if (this.exited) return;
+    if (this.exited || this.crashed) return;
     this.events.onMessage({ type: 'fatal', error: serializeError(classifyError(cause)) });
+    this.crashed = true;
+    this.worker.handle({ type: 'interrupt' });
     this.close();
   }
 

@@ -26,7 +26,8 @@ const outcome = await run({
   quiet: true,
 });
 console.log(JSON.stringify({
-  results: Object.fromEntries(outcome.results.map((r) => [r.test.title, [r.status, r.attempts[0]?.error?.code, r.attempts[0]?.error?.message]])),
+  results: Object.fromEntries(outcome.results.map((r) => [r.test.title, [r.status, r.attempts[0]?.error?.code ?? r.skip?.cause, r.attempts[0]?.error?.message]])),
+  exitCode: outcome.exitCode,
   runErrors: outcome.report.run.errors.map((e) => [e.code, e.message]),
   listeners: { before, after: listeners() },
 }));
@@ -46,6 +47,7 @@ function runInHost(tests: Readonly<Record<string, string>>) {
   expect(host.status).toBe(0);
   return JSON.parse(host.stdout.trim().split('\n').at(-1)!) as {
     results: Record<string, [string, string | null, string | null]>;
+    exitCode: number;
     runErrors: [string, string][];
     listeners: { before: number[]; after: number[] };
   };
@@ -95,7 +97,7 @@ test('runs afterwards', async () => {});
     expect(outcome.runErrors[0]?.[1]).toContain('late');
   });
 
-  it('records an uncaught exception as a run error instead of crashing the host', () => {
+  it('ends the worker on an uncaught exception, as a crashed worker process, instead of crashing the host', () => {
     const outcome = runInHost({
       'tests/throws.e2e.ts': `import { test } from 'e2e';
 
@@ -103,11 +105,40 @@ test('throws off the stack', async () => {
   setTimeout(() => {
     throw new Error('boom-uncaught');
   });
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
 });
+
+test('never starts', async () => {});
 `,
     });
+    expect(outcome.results).toEqual({
+      'throws off the stack': ['failed', 'WORKER_CRASH', expect.any(String)],
+      'never starts': ['skipped', 'infrastructure-unavailable', null],
+    });
     expect(outcome.runErrors).toEqual([['ERROR', 'boom-uncaught']]);
+    expect(outcome.exitCode).toBe(3);
     expect(outcome.listeners).toEqual({ before: [0, 0], after: [0, 0] });
+  });
+
+  it('ends the worker on a rejection before any test has finished in it', () => {
+    const outcome = runInHost({
+      'tests/early.e2e.ts': `import { test } from 'e2e';
+
+test.beforeAll(async () => {
+  void Promise.reject(new Error('early'));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+});
+
+test('is on its way when it surfaces', async () => {});
+
+test('follows in the same file', async () => {});
+`,
+    });
+    expect(outcome.results).toEqual({
+      'is on its way when it surfaces': ['failed', 'WORKER_CRASH', expect.any(String)],
+      'follows in the same file': ['skipped', 'infrastructure-unavailable', null],
+    });
+    expect(outcome.runErrors).toEqual([['ERROR', 'early']]);
+    expect(outcome.exitCode).toBe(3);
   });
 });
