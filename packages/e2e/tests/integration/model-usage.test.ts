@@ -38,7 +38,7 @@ describe('reported model usage', () => {
     }
   });
 
-  it.each([-1, NaN])('sanitizes malformed judgment counters (%s) before recording events', async (invalid) => {
+  it.each([-1, 0.5, NaN])('sanitizes malformed judgment counters (%s) before recording events', async (invalid) => {
     const project = createProject({ 'tests/usage.e2e.ts': `import { test } from 'e2e';
       test('judge', async ({ agent }) => { await agent.assert('ready'); });` });
     const model = createScriptedInstance('test', 'usage', async () => ({

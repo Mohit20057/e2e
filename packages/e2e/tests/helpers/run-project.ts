@@ -43,9 +43,11 @@ function defaultTargets(appUrl: string | undefined): NonNullable<E2EConfig['targ
   return [webTarget('web', appUrl)];
 }
 
-/** The run environment: the caller's, outside CI, with the fixture app's URL when there is one. */
+/** The run environment: the caller's, outside CI, with `APP_URL` the fixture app's URL or unset, never the caller's. */
 function fixtureEnv(appUrl: string | undefined): NodeJS.ProcessEnv {
-  return { ...process.env, ...(appUrl === undefined ? {} : { APP_URL: appUrl }), CI: '' };
+  const env: NodeJS.ProcessEnv = { ...process.env, CI: '' };
+  delete env['APP_URL'];
+  return appUrl === undefined ? env : { ...env, APP_URL: appUrl };
 }
 
 export interface FixtureProject {

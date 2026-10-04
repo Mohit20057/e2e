@@ -409,6 +409,27 @@ describe('e2e explore', () => {
     expect(notices).toContain('agents.custom is a custom executor ("math-brain"); explore runs the built-in agent instead');
   }, 60_000);
 
+  it('replaces a custom executor with the built-in agent on the model it brought, and is blocked when nothing is explored', async () => {
+    const model = installExploreModel({
+      plan: () => ({ decision: 'finish', summary: 'Nothing here.' }),
+      loop: () => [{ toolName: 'complete_step', input: { status: 'passed', summary: 'unused' } }],
+    });
+    const custom: StepExecutor = { name: 'house-brain', model, runStep: async () => ({ status: 'passed', summary: 'never runs' }) };
+    const notices: string[] = [];
+    const outcome = await explore({
+      cwd: project.dir,
+      rawConfig: { targets: [{ name: 'web', engine: web(), app: { url: app.url } }] as never, agents: { default: { executor: custom } } },
+      goal: 'Explore the home page and find bugs',
+      maxSteps: 2,
+      timeoutMs: 180_000,
+      notice: (message) => notices.push(message),
+    });
+    expect(outcome.status).toBe('blocked');
+    expect(outcome.report.run.explore).toMatchObject({ ended: 'finished', steps: [], findings: [] });
+    expect(outcome.report.run.results[0]!.attempts[0]!.error?.code).toBe('AUTOMATION_UNSUPPORTED');
+    expect(notices).toEqual(['agents.default is a custom executor ("house-brain"); explore runs the built-in agent instead, with the model that executor brought']);
+  }, 120_000);
+
   it('lets the explorer sign in with a configured credential through type_secret, never seeing the password', async () => {
     const planPrompts: string[] = [];
     let fillResult: string | undefined;
