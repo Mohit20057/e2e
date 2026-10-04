@@ -9,6 +9,7 @@
 import type { ModuleRegistration } from '../collect/registry.ts';
 import type { Selection, TestTargetPair } from '../collect/select.ts';
 import type { ResolvedConfig, ResolvedTarget } from '../config/resolve.ts';
+import { isAbandonedRejection } from '../internal/abandoned.ts';
 import { classifyError, ConfigurationError, serializeError } from '../internal/errors.ts';
 import type { DebugTrace } from '../internal/debug.ts';
 import type { InMemoryAttempts } from './execute.ts';
@@ -47,6 +48,12 @@ class InProcessRunner implements UnitRunner {
   private readonly finish: () => void;
   private exited = false;
   private closing = false;
+  /** Takes what this process failed to catch while the runner lives; see `catchStrays`. */
+  private readonly onRejection = (cause: unknown): void => {
+    if (isAbandonedRejection(cause)) return;
+    if (!this.worker.strayRejection(cause)) this.fail(cause);
+  };
+  private readonly onException = (cause: unknown): void => this.fail(cause);
 
   constructor(
     private readonly targetName: string,
@@ -64,18 +71,12 @@ class InProcessRunner implements UnitRunner {
         emit: (message) => {
           if (!this.exited) this.events.onMessage(message);
         },
-        fatal: (cause) => {
-          if (this.exited) return;
-          this.events.onMessage({
-            type: 'fatal',
-            error: serializeError(classifyError(cause)),
-          });
-          this.close();
-        },
+        fatal: (cause) => this.fail(cause),
         finished: () => this.end('shut down'),
       },
       () => this.bootstrap(),
     );
+    this.catchStrays();
     this.worker.start();
   }
 
@@ -109,6 +110,27 @@ class InProcessRunner implements UnitRunner {
     this.close();
   }
 
+  /**
+   * Catches what a test leaves uncaught the way a worker process does
+   * (`worker/entry.ts`): a rejection nobody handled is charged to the attempt
+   * in flight, or recorded against the last test that finished, and is
+   * otherwise fatal to this worker, as an uncaught exception is. The
+   * listeners live exactly as long as the runner, so a host process keeps its
+   * own handling before and after the run. The scheduler keeps at most one
+   * in-process runner alive at a time, so nothing is charged twice.
+   */
+  private catchStrays(): void {
+    process.on('unhandledRejection', this.onRejection);
+    process.on('uncaughtException', this.onException);
+  }
+
+  /** Reports an unrecoverable failure and winds the worker down. */
+  private fail(cause: unknown): void {
+    if (this.exited) return;
+    this.events.onMessage({ type: 'fatal', error: serializeError(classifyError(cause)) });
+    this.close();
+  }
+
   /** Stops accepting work and asks the queue to wind down. */
   private close(): void {
     if (this.exited || this.closing) return;
@@ -119,6 +141,8 @@ class InProcessRunner implements UnitRunner {
   private end(detail: string): void {
     if (this.exited) return;
     this.exited = true;
+    process.off('unhandledRejection', this.onRejection);
+    process.off('uncaughtException', this.onException);
     this.events.onExit(detail);
     this.finish();
   }
