@@ -307,6 +307,29 @@ describe('trace cache: a model that never answered implicates nothing', () => {
     project.cleanup();
   }, 240_000);
 
+  it('keeps an entry whose replay handed off to a model that never answered', async () => {
+    await recordEntry();
+    rewriteOnlyEntry(project, (payload) => {
+      const [firstTap, secondTap] = payload.actions;
+      if (firstTap === undefined || secondTap?.name !== 'tap') throw new Error(`expected two taps, got ${JSON.stringify(payload.actions)}`);
+      return { ...payload, actions: [firstTap, { ...secondTap, target: { ...secondTap.target, name: 'No Such Button' } }] };
+    });
+    const handedOff = entryFileState(project);
+    const outcome = await runExisting(project, {
+      appUrl: app.url,
+      config: {
+        tests: 'tests/**/*.e2e.ts',
+        agents: { default: { model: unreachableModel } },
+        cache: 'read-write' as const,
+      },
+    });
+    expect(outcome.exitCode).not.toBe(0);
+    expect(actStep(outcome).cache).toMatchObject({ mode: 'agent-concluded', reason: 'target-not-found', replayedActions: 1 });
+    expect(stepErrorCode(outcome, 'agent.act')).toBe('MODEL_PROVIDER_FAILED');
+    expect(entryFileState(project)).toEqual(handedOff);
+    project.cleanup();
+  }, 240_000);
+
   it('still evicts the replayed entry when a later assertion fails on the app', async () => {
     await recordEntry();
     writeFileSync(path.join(project.dir, 'tests', 'act.e2e.ts'), PROVIDER_DOWN_THEN_WRONG_AFTER_EACH_SUITE, 'utf8');

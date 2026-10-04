@@ -73,6 +73,11 @@ test('starts with the seeded state', { session: 'seeded' }, async ({ app, screen
   await app.open('/storage');
   await expect(screen.getByRole('status', { name: 'Marker' })).toHaveText('saved');
 });
+
+test('without a session starts clean', async ({ app, screen }) => {
+  await app.open('/storage');
+  await expect(screen.getByRole('status', { name: 'Marker' })).toHaveText('empty');
+});
 `;
       const { outcome, project } = await runProjectWithConfigFile(
         { 'tests/auth.setup.e2e.ts': setupFile, 'tests/consumer.e2e.ts': consumerFile },
@@ -80,6 +85,7 @@ test('starts with the seeded state', { session: 'seeded' }, async ({ app, screen
       );
       expect(resultByTitle(outcome, 'seed storage').status).toBe('passed');
       expect(resultByTitle(outcome, 'starts with the seeded state').status).toBe('passed');
+      expect(resultByTitle(outcome, 'without a session starts clean').status).toBe('passed');
       expect(outcome.exitCode).toBe(0);
       const sessionsRoot = path.join(project.dir, '.e2e', 'sessions');
       if (existsSync(sessionsRoot)) expect(readdirSync(sessionsRoot)).toEqual([]);

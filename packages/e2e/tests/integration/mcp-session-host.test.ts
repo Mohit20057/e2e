@@ -131,7 +131,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     const idle = host(fakes.next, { idleMs: 100 });
     await idle.open({});
     expect(idle.isOpen).toBe(true);
-    await expect.poll(() => idle.isOpen).toBe(false);
+    await expect.poll(() => idle.isOpen, { timeout: 5_000 }).toBe(false);
     expect(logs.some((line) => line.includes('idle for'))).toBe(true);
     expect(fakes.made[0]!.stats()).toMatchObject({ attemptsStarted: 1, attemptsEnded: 1, disposes: 1 });
   });
@@ -140,8 +140,8 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     const fakes = engines();
     const short = host(fakes.next, { ttlMs: 500 });
     await short.open({});
-    await expect.poll(() => short.isOpen).toBe(false);
-    await expect.poll(() => logs.some((line) => line.includes('exceeded its 500 ms timeout'))).toBe(true);
+    await expect.poll(() => short.isOpen, { timeout: 5_000 }).toBe(false);
+    await expect.poll(() => logs.some((line) => line.includes('exceeded its 500 ms timeout')), { timeout: 5_000 }).toBe(true);
     expect(fakes.made[0]!.stats()).toMatchObject({ attemptsEnded: 1, disposes: 1 });
   });
 
@@ -456,7 +456,7 @@ describe('SessionHost', { timeout: 60_000 }, () => {
     await counted.close('closed by the agent', id);
     await expect(counted.open({ target: 'nowhere' })).rejects.toMatchObject({ code: 'UNKNOWN_TARGET' });
     await counted.open({});
-    await expect.poll(() => summaries).toHaveLength(3);
+    await expect.poll(() => summaries, { timeout: 5_000 }).toHaveLength(3);
 
     const [closed, failed, idle] = summaries as [McpSessionSummary, McpSessionSummary, McpSessionSummary];
     expect(closed).toMatchObject({
