@@ -50,8 +50,10 @@ class InProcessRunner implements UnitRunner {
   private closing = false;
   /**
    * Set by a fatal error: the worker is dead to the scheduler from then on,
-   * as a crashed process would be, so nothing it reports while it winds down
-   * counts, and its unit's results are synthesized when it exits.
+   * as a crashed process would be, so nothing it reports about its unit
+   * while it winds down counts, and the unit's results are synthesized when
+   * it exits. Unlike a dead process it still disposes its engine, so the
+   * failures of that disposal (`shutdown-done`) are still reported.
    */
   private crashed = false;
   /** Takes what this process failed to catch while the runner lives; see `catchStrays`. */
@@ -75,7 +77,8 @@ class InProcessRunner implements UnitRunner {
     this.worker = new TargetWorker(
       {
         emit: (message) => {
-          if (!this.exited && !this.crashed) this.events.onMessage(message);
+          if (this.exited || (this.crashed && message.type !== 'shutdown-done')) return;
+          this.events.onMessage(message);
         },
         fatal: (cause) => this.fail(cause),
         finished: () => this.end('shut down'),

@@ -11,14 +11,15 @@ afterEach(() => {
 /**
  * A host process of its own: vitest's handlers would see the stray errors
  * first, and the point is what an in-process run does to a host that has
- * none. It runs the fixture through a `rawConfig`, prints what came back and
- * which process listeners it left behind.
+ * none. It runs the fixture through a `rawConfig` on a noop engine with
+ * `engineMembers`, prints what came back and which process listeners it left
+ * behind.
  */
-const HOST = `import { defineEngine } from 'e2e/engine';
+const hostScript = (engineMembers: string) => `import { defineEngine } from 'e2e/engine';
 const { run } = await import(new URL('../../../dist/run/runner.js', import.meta.url).href);
 const listeners = () => [process.listenerCount('unhandledRejection'), process.listenerCount('uncaughtException')];
 const before = listeners();
-const engine = defineEngine({ name: 'noop', version: '1', spiVersion: 1 });
+const engine = defineEngine({ name: 'noop', version: '1', spiVersion: 1, ${engineMembers} });
 const outcome = await run({
   cwd: process.cwd(),
   rawConfig: { targets: [{ name: 'headless', platform: 'test', engine }] },
@@ -34,8 +35,8 @@ console.log(JSON.stringify({
 `;
 
 /** Runs `tests` in-process inside a fresh host process. */
-function runInHost(tests: Readonly<Record<string, string>>) {
-  const project = createProject({ ...tests, 'host.mjs': HOST });
+function runInHost(tests: Readonly<Record<string, string>>, engineMembers = '') {
+  const project = createProject({ ...tests, 'host.mjs': hostScript(engineMembers) });
   projects.push(project);
   const host = spawnSync(process.execPath, ['host.mjs'], {
     cwd: project.dir,
@@ -118,6 +119,27 @@ test('never starts', async () => {});
     expect(outcome.runErrors).toEqual([['ERROR', 'boom-uncaught']]);
     expect(outcome.exitCode).toBe(3);
     expect(outcome.listeners).toEqual({ before: [0, 0], after: [0, 0] });
+  });
+
+  it('still reports what disposing the engine failed with after a fatal', () => {
+    const outcome = runInHost(
+      {
+        'tests/throws.e2e.ts': `import { test } from 'e2e';
+
+test('throws off the stack', async () => {
+  setTimeout(() => {
+    throw new Error('boom-uncaught');
+  });
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+});
+`,
+      },
+      `dispose: () => { throw new Error('dispose-failed'); },`,
+    );
+    expect(outcome.runErrors).toEqual([
+      ['ERROR', 'boom-uncaught'],
+      ['ENGINE_FAILURE', expect.stringContaining('dispose-failed')],
+    ]);
   });
 
   it('ends the worker on a rejection before any test has finished in it', () => {
