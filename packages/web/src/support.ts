@@ -413,7 +413,7 @@ export function nearestPixel(point: ViewportPoint): ViewportPoint {
   return { x: Math.round(point.x), y: Math.round(point.y) };
 }
 
-/** A pointer drag from one viewport point to another, on whole pixels, with an intermediate move so drag handlers see motion. */
+/** A pointer drag from one viewport point to another, on whole pixels, with an intermediate move so drag handlers see motion; paced over `durationMs` when given. */
 export async function performPointDrag(
   mouse: Mouse,
   start: ViewportPoint,
@@ -427,10 +427,12 @@ export async function performPointDrag(
   await mouse.move(from.x, from.y);
   await mouse.down();
   try {
-    if (durationMs !== undefined && durationMs > 0) {
+    if (durationMs !== undefined) {
       const steps = Math.max(2, Math.round(durationMs / 16));
+      const startedAt = performance.now();
       for (let step = 1; step <= steps; step += 1) {
-        await setTimeout(durationMs / steps, undefined, { signal });
+        const due = startedAt + (durationMs * step) / steps;
+        await setTimeout(Math.max(0, due - performance.now()), undefined, { signal });
         await mouse.move(
           from.x + ((to.x - from.x) * step) / steps,
           from.y + ((to.y - from.y) * step) / steps,
