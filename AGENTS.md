@@ -28,7 +28,6 @@ There is no separate spec. The code is the contract, pinned in three places:
 
 There are no RFCs or design documents in the repo. The why lives in PR
 descriptions and commit bodies; `git log` and `gh pr view` are the archive.
-
 ## Layout
 
 `packages/` holds what publishes to npm; `apps/` holds the private apps and
@@ -108,6 +107,14 @@ suites that consume the built packages the way a user would.
   "Committed recordings" under Gotchas. Scenario files are copies: keep
   diffs against the source minimal, and name no company a scenario was
   distilled from.
+- `examples/` — standalone user-facing projects, one per technology
+  (`with-vite`, `with-next`, `with-expo`, `with-swiftui`), each the same
+  one-screen greeter demo with deterministic and agent tests. They install
+  the published packages from npm, sit outside the pnpm workspace, commit no
+  lockfile, and run in no CI; oxlint and fallow ignore them. A change runs
+  the example's suite by hand and updates the "Last checked" line in its
+  README. A SwiftUI example keeps its tests in an `e2e/` folder beside the
+  native project, as a user would.
 - `docs/` (the Mintlify docs site; pages are the `.mdx` files under `docs/`,
   navigation, theme, and redirects in `docs/docs.json`, extra CSS in
   `docs/style.css`; `docs/examples/` is typechecked and shown verbatim on
@@ -206,7 +213,7 @@ thread handled, and labeled `Ready for Human Review`. "It compiles" and
 
 ## Testing quirks
 
-- Vitest 4, `pool: 'forks'`, two projects. `integration` is capped at
+- Vitest 5, `pool: 'forks'`, two projects. `integration` is capped at
   `maxWorkers: 3` and runs in a later group — do not raise it; CPU starvation
   produces timeouts indistinguishable from real failures.
 - Integration tests write throwaway projects into

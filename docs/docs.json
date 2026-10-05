@@ -283,6 +283,13 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Examples",
+        "icon": "folder-open",
+        "pages": [
+          "example-projects"
+        ]
       }
     ]
   },

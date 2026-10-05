@@ -311,7 +311,7 @@ export class PlaywrightSurface {
     await this.configuredInitScripts.load(info.projectRoot);
     if (this.leases !== undefined) return this.leases.prepare(info);
     if (this.connect !== undefined) return;
-    await ensureBrowsersInstalled([this.browserName], { env: info.env, signal: info.signal, log: info.log });
+    await ensureBrowsersInstalled([this.browserName], { env: info.env, signal: info.signal, log: info.log, headed: info.headed });
   }
 
   /** Releases the browsers `prepare` leased; a local launch or a `connect` has nothing to release. */
@@ -756,7 +756,7 @@ export class PlaywrightSurface {
         return matches.map(({ raw, index }) => {
           const pinned = handles?.[index];
           // A single match keeps the strict locator, so a ref that turns
-          // ambiguous between locate and perform fails loud instead of acting
+          // ambiguous between locate and perform is stale instead of acting
           // on whichever element is first.
           const locator = reads.length === 1 ? projected.locator : projected.locator.nth(index);
           const id = refs.storeLocated(
